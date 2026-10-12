@@ -5,7 +5,6 @@ import re
 import shutil
 import sys
 import urllib.parse
-from curl_cffi import requests
 
 OUTPUT_FILE = "api.json"
 
@@ -55,6 +54,43 @@ def process_data(item):
     return item
 
 
+def fetch_api_data(url):
+    try:
+        from curl_cffi import requests as cffi_requests
+
+        res = cffi_requests.get(url, impersonate="chrome120", timeout=30)
+        if res.status_code == 200:
+            return res.json()
+    except Exception as e:
+        print(f"curl_cffi error: {e}", file=sys.stderr)
+
+    try:
+        import cloudscraper
+
+        scraper = cloudscraper.create_scraper(
+            browser={"browser": "chrome", "platform": "android", "desktop": False}
+        )
+        res = scraper.get(url, timeout=30)
+        if res.status_code == 200:
+            return res.json()
+    except Exception as e:
+        print(f"cloudscraper error: {e}", file=sys.stderr)
+
+    try:
+        import requests
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        res = requests.get(url, headers=headers, timeout=30)
+        if res.status_code == 200:
+            return res.json()
+    except Exception as e:
+        print(f"requests error: {e}", file=sys.stderr)
+
+    return None
+
+
 def push_to_github():
     github_token = os.getenv("GH_TOKEN")
     github_user = os.getenv("TGITHUB_USER")
@@ -62,6 +98,7 @@ def push_to_github():
     github_email = os.getenv("TGITHUB_EMAIL")
 
     if not github_token or not github_user or not github_repo:
+        print("Missing required push secrets", file=sys.stderr)
         return
 
     temp_dir = "temp_external_repo"
@@ -73,6 +110,7 @@ def push_to_github():
 
         clone_status = os.system(f"git clone {remote_url} {temp_dir}")
         if clone_status != 0:
+            print("Git clone failed", file=sys.stderr)
             return
 
         shutil.copy(OUTPUT_FILE, os.path.join(temp_dir, OUTPUT_FILE))
@@ -85,25 +123,28 @@ def push_to_github():
         os.system(f'git config user.name "{github_user}"')
         os.system(f"git add {OUTPUT_FILE}")
         os.system(f'git commit -m "Auto Update: {OUTPUT_FILE}" || echo "No changes"')
-        os.system("git push origin HEAD")
+        push_status = os.system("git push origin HEAD")
 
         os.chdir(current_dir)
         shutil.rmtree(temp_dir)
-    except Exception:
-        pass
+
+        if push_status != 0:
+            print("Git push failed", file=sys.stderr)
+    except Exception as e:
+        print(f"Push failed: {e}", file=sys.stderr)
 
 
 def main():
-    api_url = os.environ.get("API_URL")
+    api_url = os.getenv("API_URL")
     if not api_url:
+        print("API_URL is missing from environment secrets", file=sys.stderr)
         sys.exit(1)
 
-    response = requests.get(api_url, impersonate="chrome120", timeout=30)
-
-    if response.status_code != 200:
+    raw_json = fetch_api_data(api_url)
+    if not raw_json:
+        print("Could not fetch API data", file=sys.stderr)
         sys.exit(1)
 
-    raw_json = response.json()
     updated_json = process_data(raw_json)
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
