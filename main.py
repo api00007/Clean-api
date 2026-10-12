@@ -123,7 +123,8 @@ def push_to_github():
         os.system(f'git config user.name "{github_user}"')
         os.system(f"git add {OUTPUT_FILE}")
         os.system(f'git commit -m "Auto Update: {OUTPUT_FILE}" || echo "No changes"')
-        push_status = os.system("git push origin HEAD")
+        os.system("git pull --rebase origin main")
+        push_status = os.system("git push origin main")
 
         os.chdir(current_dir)
         shutil.rmtree(temp_dir)
