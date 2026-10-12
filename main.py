@@ -4,7 +4,7 @@ import os
 import re
 import sys
 import urllib.parse
-import requests
+from curl_cffi import requests
 
 
 def clean_stream_url(raw_text):
@@ -57,12 +57,10 @@ def main():
     if not api_url:
         sys.exit(1)
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    }
+    response = requests.get(api_url, impersonate="chrome120", timeout=30)
 
-    response = requests.get(api_url, headers=headers, timeout=30)
-    response.raise_for_status()
+    if response.status_code != 200:
+        sys.exit(1)
 
     raw_json = response.json()
     updated_json = process_data(raw_json)
